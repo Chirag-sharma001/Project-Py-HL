@@ -168,137 +168,89 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
     <script>
-        let currentVulnerabilities = null;
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const scannerStatus = document.getElementById('scannerStatus');
-        const statsContainer = document.querySelector('.stats-container');
+      document.getElementById('scanButton').addEventListener('click', async () => {
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) {
+        showStatus('Please enter a URL', 'danger');
+        return;
+    }
 
-        function updateStats(vulnerabilities) {
-            let high = 0, medium = 0, low = 0;
+    const resultsDiv = document.getElementById('results');
+    const scanButton = document.getElementById('scanButton');
+    const exportButton = document.getElementById('exportButton');
+
+    // Reset and show loading
+    resultsDiv.innerHTML = '';
+    loadingOverlay.style.display = 'flex';
+    scanButton.disabled = true;
+    exportButton.disabled = true;
+    statsContainer.style.display = 'none';
+    showStatus('Scanning in progress...', 'info');
+
+    try {
+        const response = await fetch('/scan', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url })
+        });
+
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            throw new Error('Received non-JSON response');
+        }
+
+        const data = await response.json();
+        
+        if (data.status === 'error') {
+            throw new Error(data.message);
+        }
+
+        currentVulnerabilities = data.vulnerabilities;
+        
+        if (currentVulnerabilities.length === 0) {
+            showStatus('No vulnerabilities found!', 'success');
+            resultsDiv.innerHTML = '<div class="alert alert-success">No vulnerabilities were detected on this website.</div>';
+        } else {
+            showStatus(`Found ${currentVulnerabilities.length} potential vulnerabilities`, 'warning');
+            updateStats(currentVulnerabilities);
             
-            vulnerabilities.forEach(vuln => {
-                if (vuln.risk.toLowerCase().includes('high')) high++;
-                else if (vuln.risk.toLowerCase().includes('medium')) medium++;
-                else low++;
-            });
-
-            document.getElementById('highRiskCount').textContent = high;
-            document.getElementById('mediumRiskCount').textContent = medium;
-            document.getElementById('lowRiskCount').textContent = low;
-            statsContainer.style.display = 'block';
-        }
-
-        function getRiskClass(risk) {
-            if (risk.toLowerCase().includes('high')) return 'risk-high';
-            if (risk.toLowerCase().includes('medium')) return 'risk-medium';
-            return 'risk-low';
-        }
-
-        document.getElementById('scanButton').addEventListener('click', async () => {
-            const url = document.getElementById('urlInput').value.trim();
-            if (!url) {
-                showStatus('Please enter a URL', 'danger');
-                return;
-            }
-
-            const resultsDiv = document.getElementById('results');
-            const scanButton = document.getElementById('scanButton');
-            const exportButton = document.getElementById('exportButton');
-
-            // Reset and show loading
-            resultsDiv.innerHTML = '';
-            loadingOverlay.style.display = 'flex';
-            scanButton.disabled = true;
-            exportButton.disabled = true;
-            statsContainer.style.display = 'none';
-            showStatus('Scanning in progress...', 'info');
-
-            try {
-                const response = await fetch('/scan', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ url })
-                });
-
-                const data = await response.json();
-                
-                if (data.status === 'error') {
-                    throw new Error(data.message);
-                }
-
-                currentVulnerabilities = data.vulnerabilities;
-                
-                if (currentVulnerabilities.length === 0) {
-                    showStatus('No vulnerabilities found!', 'success');
-                    resultsDiv.innerHTML = '<div class="alert alert-success">No vulnerabilities were detected on this website.</div>';
-                } else {
-                    showStatus(`Found ${currentVulnerabilities.length} potential vulnerabilities`, 'warning');
-                    updateStats(currentVulnerabilities);
-                    
-                    const results = currentVulnerabilities.map(vuln => `
-                        <div class="card vulnerability-card ${getRiskClass(vuln.risk)} mb-3">
-                            <div class="card-body">
-                                <h5 class="card-title">${vuln.type}</h5>
-                                <div class="row">
-                                    <div class="col-md-8">
-                                        <p class="card-text"><strong>Details:</strong> ${vuln.details}</p>
-                                        <p class="card-text"><strong>Risk:</strong> ${vuln.risk}</p>
-                                    </div>
-                                    <div class="col-md-4 border-start">
-                                        <h6>Recommended Solution:</h6>
-                                        <p class="card-text">${vuln.solution}</p>
-                                    </div>
-                                </div>
+            const results = currentVulnerabilities.map(vuln => `
+                <div class="card vulnerability-card ${getRiskClass(vuln.risk)} mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">${vuln.type}</h5>
+                        <div class="row">
+                            <div class="col-md-8">
+                                <p class="card-text"><strong>Details:</strong> ${vuln.details}</p>
+                                <p class="card-text"><strong>Risk:</strong> ${vuln.risk}</p>
+                            </div>
+                            <div class="col-md-4 border-start">
+                                <h6>Recommended Solution:</h6>
+                                <p class="card-text">${vuln.solution}</p>
                             </div>
                         </div>
-                    `).join('');
-                    
-                    resultsDiv.innerHTML = results;
-                    exportButton.disabled = false;
-                }
-            } catch (error) {
-                showStatus(error.message, 'danger');
-                resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
-            } finally {
-                loadingOverlay.style.display = 'none';
-                scanButton.disabled = false;
-            }
-        });
-
-        function showStatus(message, type) {
-            scannerStatus.textContent = message;
-            scannerStatus.className = `scanner-status alert alert-${type}`;
-            scannerStatus.style.display = 'block';
+                    </div>
+                </div>
+            `).join('');
+            
+            resultsDiv.innerHTML = results;
+            exportButton.disabled = false;
         }
+    } catch (error) {
+        showStatus(error.message, 'danger');
+        resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+    } finally {
+        loadingOverlay.style.display = 'none';
+        scanButton.disabled = false;
+    }
+});
 
-        document.getElementById('exportButton').addEventListener('click', async () => {
-            if (!currentVulnerabilities) return;
-
-            try {
-                const response = await fetch('/export', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ vulnerabilities: currentVulnerabilities })
-                });
-
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'scan_results.txt';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                showStatus('Results exported successfully!', 'success');
-            } catch (error) {
-                showStatus('Failed to export results', 'danger');
-            }
-        });
+function showStatus(message, type) {
+    scannerStatus.textContent = message;
+    scannerStatus.className = `scanner-status alert alert-${type}`;
+    scannerStatus.style.display = 'block';
+}
     </script>
 </body>
 </html>
